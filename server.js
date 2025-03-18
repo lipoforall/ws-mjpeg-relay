@@ -41,7 +41,24 @@ const wss = new WebSocket.Server({
 let sourceWs = null;
 let reconnectTimer = null;
 let isConnected = false;
-let connectedClients = new Set();
+let connectedClients = new Map(); // Changed to Map to store client IPs
+
+// Function to get client IP
+function getClientIP(ws) {
+  const ip = ws._socket.remoteAddress;
+  return ip.replace(/^.*:/, ''); // Remove IPv6 prefix if present
+}
+
+// Function to log connection status
+function logConnectionStatus() {
+  console.log('\n=== Connection Status ===');
+  console.log(`Total connected clients: ${connectedClients.size}`);
+  console.log('Connected client IPs:');
+  connectedClients.forEach((ws, ip) => {
+    console.log(`- ${ip}`);
+  });
+  console.log('=====================\n');
+}
 
 // Function to connect to source WebSocket
 function connectToSource() {
@@ -61,9 +78,9 @@ function connectToSource() {
     isConnected = true;
     
     // Notify all clients of connection status
-    connectedClients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({
+    connectedClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
           type: 'status',
           connected: true
         }));
@@ -73,9 +90,9 @@ function connectToSource() {
 
   sourceWs.on('message', (data) => {
     // Broadcast the message to all connected clients
-    connectedClients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(data);
+    connectedClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
     });
   });
@@ -90,9 +107,9 @@ function connectToSource() {
     isConnected = false;
     
     // Notify all clients of connection status
-    connectedClients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({
+    connectedClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
           type: 'status',
           connected: false
         }));
@@ -107,8 +124,14 @@ function connectToSource() {
 
 // Handle client connections
 wss.on('connection', (ws) => {
-  console.log('Client connected');
-  connectedClients.add(ws);
+  const clientIP = getClientIP(ws);
+  console.log(`New client connected from IP: ${clientIP}`);
+  
+  // Store client connection with its IP
+  connectedClients.set(clientIP, ws);
+  
+  // Log current connection status
+  logConnectionStatus();
   
   // Send connection status to client
   ws.send(JSON.stringify({
@@ -118,12 +141,13 @@ wss.on('connection', (ws) => {
   
   // Handle client disconnect
   ws.on('close', () => {
-    console.log('Client disconnected');
-    connectedClients.delete(ws);
+    console.log(`Client disconnected from IP: ${clientIP}`);
+    connectedClients.delete(clientIP);
+    logConnectionStatus();
   });
 
   ws.on('error', (error) => {
-    console.error('Client WebSocket error:', error);
+    console.error(`Client WebSocket error from IP ${clientIP}:`, error);
   });
 });
 

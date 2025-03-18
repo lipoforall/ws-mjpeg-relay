@@ -114,10 +114,13 @@ function App() {
       </div>
       
       <div className="controls">
-        <div className={`status ${status}`}>
-          {status === 'connected' ? 'Connected to video stream' :
-           status === 'connecting' ? 'Connecting to stream...' :
-           'Disconnected'}
+        <div className="status-container">
+          <div className={`status-led ${status}`} />
+          <span className="status-text">
+            {status === 'connected' ? 'Connected' :
+             status === 'connecting' ? 'Connecting' :
+             'Disconnected'}
+          </span>
         </div>
         <div>
           <button className="button" onClick={connectWebSocket}>Reconnect</button>
