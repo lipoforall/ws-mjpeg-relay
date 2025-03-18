@@ -68,6 +68,9 @@ function App() {
       }
 
       if (event.data instanceof Blob) {
+        // If we receive a frame, we know we're connected
+        setStatus('connected');
+        
         const reader = new FileReader();
         reader.onload = () => {
           const img = new Image();
@@ -82,6 +85,10 @@ function App() {
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0);
               setFramesReceived(prev => prev + 1);
+              // Update connection time if not set already
+              if (!connectionTimeRef.current) {
+                connectionTimeRef.current = new Date();
+              }
             }
           };
           img.src = reader.result;
