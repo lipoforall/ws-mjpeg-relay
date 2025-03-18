@@ -4,7 +4,7 @@ const path = require('path');
 const http = require('http');
 
 // Environment variables
-const sourceWebSocket = process.env.SOURCE_WEBSOCKET || 'ws://10.242.176.200:8888/ws';
+let sourceWebSocket = process.env.SOURCE_WEBSOCKET || 'ws://10.242.176.200:8888/ws';
 const hostIP = process.env.HOST_IP || '172.27.65.25';
 const port = process.env.PORT || 10000;
 const reconnectInterval = process.env.RECONNECT_INTERVAL || 5000; // 5 seconds
@@ -12,6 +12,9 @@ const reconnectInterval = process.env.RECONNECT_INTERVAL || 5000; // 5 seconds
 // Create express app
 const app = express();
 const server = http.createServer(app);
+
+// Middleware to parse JSON bodies
+app.use(express.json());
 
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'public')));
@@ -23,6 +26,26 @@ app.get('/api/config', (req, res) => {
     hostIP,
     port
   });
+});
+
+// API endpoint to update configuration
+app.post('/api/config', (req, res) => {
+  const { sourceWebSocket: newSourceWebSocket } = req.body;
+  
+  if (!newSourceWebSocket) {
+    return res.status(400).json({ error: 'Source WebSocket URL is required' });
+  }
+
+  // Update the source WebSocket URL
+  sourceWebSocket = newSourceWebSocket;
+  
+  // Reconnect to the new source
+  if (sourceWs) {
+    sourceWs.close();
+  }
+  connectToSource();
+
+  res.json({ message: 'Configuration updated successfully' });
 });
 
 // The "catchall" handler: for any request that doesn't
@@ -41,18 +64,17 @@ const wss = new WebSocket.Server({
 let sourceWs = null;
 let reconnectTimer = null;
 let isConnected = false;
-let connectedClients = new Set(); // Changed back to Set for better performance
-let lastFrame = null; // Store the last received frame
+let connectedClients = new Set();
+let lastFrame = null;
 
 // Function to get client IP
 function getClientIP(ws) {
   const ip = ws._socket.remoteAddress;
-  return ip.replace(/^.*:/, ''); // Remove IPv6 prefix if present
+  return ip.replace(/^.*:/, '');
 }
 
 // Function to log connection status (non-blocking)
 function logConnectionStatus() {
-  // Use setTimeout to ensure logging doesn't block the main thread
   setTimeout(() => {
     console.log('\n=== Connection Status ===');
     console.log(`Total connected clients: ${connectedClients.size}`);
@@ -66,7 +88,7 @@ function logConnectionStatus() {
 
 // Function to broadcast frame to all clients
 function broadcastFrame(frame) {
-  const clients = Array.from(connectedClients); // Create a copy of the clients array
+  const clients = Array.from(connectedClients);
   clients.forEach(ws => {
     if (ws.readyState === WebSocket.OPEN) {
       try {
@@ -80,7 +102,6 @@ function broadcastFrame(frame) {
 
 // Function to connect to source WebSocket
 function connectToSource() {
-  // Clear any existing reconnect timer
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -88,14 +109,12 @@ function connectToSource() {
   
   console.log(`Attempting to connect to source: ${sourceWebSocket}`);
   
-  // Create new connection to source
   sourceWs = new WebSocket(sourceWebSocket);
   
   sourceWs.on('open', () => {
     console.log('Connected to source WebSocket');
     isConnected = true;
     
-    // Notify all clients of connection status
     connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -107,10 +126,7 @@ function connectToSource() {
   });
 
   sourceWs.on('message', (data) => {
-    // Store the last frame
     lastFrame = data;
-    
-    // Broadcast the frame to all connected clients
     broadcastFrame(data);
   });
 
@@ -123,7 +139,6 @@ function connectToSource() {
     console.log('Source WebSocket closed, attempting to reconnect...');
     isConnected = false;
     
-    // Notify all clients of connection status
     connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -133,7 +148,6 @@ function connectToSource() {
       }
     });
     
-    // Schedule reconnection
     console.log(`Will attempt to reconnect in ${reconnectInterval}ms`);
     reconnectTimer = setTimeout(connectToSource, reconnectInterval);
   });
@@ -144,19 +158,14 @@ wss.on('connection', (ws) => {
   const clientIP = getClientIP(ws);
   console.log(`New client connected from IP: ${clientIP}`);
   
-  // Store client connection
   connectedClients.add(ws);
-  
-  // Log current connection status (non-blocking)
   logConnectionStatus();
   
-  // Send connection status to client
   ws.send(JSON.stringify({
     type: 'status',
     connected: isConnected
   }));
 
-  // If we have a last frame, send it to the new client
   if (lastFrame && isConnected) {
     try {
       ws.send(lastFrame);
@@ -165,7 +174,6 @@ wss.on('connection', (ws) => {
     }
   }
   
-  // Handle client disconnect
   ws.on('close', () => {
     console.log(`Client disconnected from IP: ${clientIP}`);
     connectedClients.delete(ws);
@@ -183,6 +191,5 @@ server.listen(port, () => {
   console.log(`WebSocket server running at ws://${hostIP}:${port}/ws`);
   console.log(`Relaying stream from: ${sourceWebSocket}`);
   
-  // Connect to source WebSocket
   connectToSource();
 });

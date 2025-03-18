@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import Settings from './components/Settings';
 import './App.css';
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
   const [connectedSince, setConnectedSince] = useState('--');
   const [framesReceived, setFramesReceived] = useState(0);
   const connectionTimeRef = useRef(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const updateConnectionTime = () => {
     if (connectionTimeRef.current) {
@@ -105,9 +107,22 @@ function App() {
     };
   }, []);
 
+  const handleSettingsChange = () => {
+    // Reconnect WebSocket with new settings
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    connectWebSocket();
+  };
+
   return (
     <div className="container">
-      <h1 className="title">WebSocket Video Stream Viewer</h1>
+      <div className="header">
+        <h1>MJPEG Stream Viewer</h1>
+        <button className="settings-button" onClick={() => setShowSettings(true)}>
+          ⚙️ Settings
+        </button>
+      </div>
       
       <div className="video-container">
         <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', margin: '0 auto' }} />
@@ -134,6 +149,15 @@ function App() {
         <p><strong>Connected since:</strong> {connectedSince}</p>
         <p><strong>Frames received:</strong> {framesReceived}</p>
       </div>
+
+      {showSettings && (
+        <Settings 
+          onClose={() => {
+            setShowSettings(false);
+            handleSettingsChange();
+          }}
+        />
+      )}
     </div>
   );
 }
