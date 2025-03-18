@@ -41,7 +41,8 @@ const wss = new WebSocket.Server({
 let sourceWs = null;
 let reconnectTimer = null;
 let isConnected = false;
-let connectedClients = new Map(); // Changed to Map to store client IPs
+let connectedClients = new Set(); // Changed back to Set for better performance
+let lastFrame = null; // Store the last received frame
 
 // Function to get client IP
 function getClientIP(ws) {
@@ -49,15 +50,32 @@ function getClientIP(ws) {
   return ip.replace(/^.*:/, ''); // Remove IPv6 prefix if present
 }
 
-// Function to log connection status
+// Function to log connection status (non-blocking)
 function logConnectionStatus() {
-  console.log('\n=== Connection Status ===');
-  console.log(`Total connected clients: ${connectedClients.size}`);
-  console.log('Connected client IPs:');
-  connectedClients.forEach((ws, ip) => {
-    console.log(`- ${ip}`);
+  // Use setTimeout to ensure logging doesn't block the main thread
+  setTimeout(() => {
+    console.log('\n=== Connection Status ===');
+    console.log(`Total connected clients: ${connectedClients.size}`);
+    console.log('Connected client IPs:');
+    connectedClients.forEach(ws => {
+      console.log(`- ${getClientIP(ws)}`);
+    });
+    console.log('=====================\n');
+  }, 0);
+}
+
+// Function to broadcast frame to all clients
+function broadcastFrame(frame) {
+  const clients = Array.from(connectedClients); // Create a copy of the clients array
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(frame);
+      } catch (error) {
+        console.error('Error sending frame to client:', error);
+      }
+    }
   });
-  console.log('=====================\n');
 }
 
 // Function to connect to source WebSocket
@@ -78,7 +96,7 @@ function connectToSource() {
     isConnected = true;
     
     // Notify all clients of connection status
-    connectedClients.forEach((ws) => {
+    connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'status',
@@ -89,12 +107,11 @@ function connectToSource() {
   });
 
   sourceWs.on('message', (data) => {
-    // Broadcast the message to all connected clients
-    connectedClients.forEach((ws) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
-    });
+    // Store the last frame
+    lastFrame = data;
+    
+    // Broadcast the frame to all connected clients
+    broadcastFrame(data);
   });
 
   sourceWs.on('error', (error) => {
@@ -107,7 +124,7 @@ function connectToSource() {
     isConnected = false;
     
     // Notify all clients of connection status
-    connectedClients.forEach((ws) => {
+    connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'status',
@@ -127,10 +144,10 @@ wss.on('connection', (ws) => {
   const clientIP = getClientIP(ws);
   console.log(`New client connected from IP: ${clientIP}`);
   
-  // Store client connection with its IP
-  connectedClients.set(clientIP, ws);
+  // Store client connection
+  connectedClients.add(ws);
   
-  // Log current connection status
+  // Log current connection status (non-blocking)
   logConnectionStatus();
   
   // Send connection status to client
@@ -138,11 +155,20 @@ wss.on('connection', (ws) => {
     type: 'status',
     connected: isConnected
   }));
+
+  // If we have a last frame, send it to the new client
+  if (lastFrame && isConnected) {
+    try {
+      ws.send(lastFrame);
+    } catch (error) {
+      console.error('Error sending last frame to new client:', error);
+    }
+  }
   
   // Handle client disconnect
   ws.on('close', () => {
     console.log(`Client disconnected from IP: ${clientIP}`);
-    connectedClients.delete(clientIP);
+    connectedClients.delete(ws);
     logConnectionStatus();
   });
 
