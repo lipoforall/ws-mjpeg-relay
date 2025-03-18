@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Video Stream Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    
+    h1 {
+      color: #2c3e50;
+    }
+    
+    .video-container {
+      margin: 20px auto;
+      background-color: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    
+    canvas {
+      display: block;
+      max-width: 100%;
+      margin: 0 auto;
+    }
+    
+    .controls {
+      margin: 20px 0;
+      padding: 10px;
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .status {
+      display: inline-block;
+      margin: 10px 0;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    
+    .connected {
+      background-color: #27ae60;
+      color: white;
+    }
+    
+    .disconnected {
+      background-color: #e74c3c;
+      color: white;
+    }
+    
+    .connecting {
+      background-color: #f39c12;
+      color: white;
+    }
+    
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 0 5px;
+      font-size: 14px;
+    }
+    
+    button:hover {
+      background-color: #2980b9;
+    }
+    
+    .info {
+      margin-top: 20px;
+      text-align: left;
+      background-color: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .info p {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>WebSocket Video Stream Viewer</h1>
+    
+    <div class="video-container">
+      <canvas id="videoCanvas"></canvas>
+    </div>
+    
+    <div class="controls">
+      <div id="statusIndicator" class="status connecting">Connecting to stream...</div>
+      <div>
+        <button id="reconnectButton">Reconnect</button>
+        <button id="fullscreenButton">Fullscreen</button>
+      </div>
+    </div>
+    
+    <div class="info">
+      <h3>Stream Information</h3>
+      <p><strong>Source:</strong> <span id="sourceInfo">ws://10.242.176.200:8888/ws</span></p>
+      <p><strong>Resolution:</strong> <span id="resolutionInfo">--</span></p>
+      <p><strong>Connected since:</strong> <span id="connectedSince">--</span></p>
+      <p><strong>Frames received:</strong> <span id="framesReceived">0</span></p>
+    </div>
+  </div>
+
+  <script>
+    // DOM elements
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const reconnectButton = document.getElementById('reconnectButton');
+    const fullscreenButton = document.getElementById('fullscreenButton');
+    const resolutionInfo = document.getElementById('resolutionInfo');
+    const connectedSince = document.getElementById('connectedSince');
+    const framesReceived = document.getElementById('framesReceived');
+    const sourceInfo = document.getElementById('sourceInfo');
+    
+    // WebSocket connection
+    let ws = null;
+    let frameCount = 0;
+    let connectionTime = null;
+    
+    // Get the WebSocket URL relative to the page
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    
+    // Update source info
+    fetch('/api/config')
+      .then(response => response.json())
+      .then(data => {
+        if (data && data.sourceWebSocket) {
+          sourceInfo.textContent = data.sourceWebSocket;
+        }
+      })
+      .catch(error => console.error('Error fetching config:', error));
+    
+    // Connect to WebSocket
+    function connectWebSocket() {
+      // Update status
+      statusIndicator.textContent = 'Connecting to stream...';
+      statusIndicator.className = 'status connecting';
+      
+      // Close existing connection if any
+      if (ws) {
+        ws.close();
+      }
+      
+      // Reset frame count
+      frameCount = 0;
+      framesReceived.textContent = '0';
+      
+      // Create new connection
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = function() {
+        statusIndicator.textContent = 'Connected to relay server';
+        connectionTime = new Date();
+        updateConnectionTime();
+        
+        // Start interval to update connection time
+        setInterval(updateConnectionTime, 1000);
+      };
+      
+      ws.onmessage = function(event) {
+        // Check if the message is JSON (status message)
+        try {
+          const jsonData = JSON.parse(event.data);
+          if (jsonData.type === 'status') {
+            if (jsonData.connected) {
+              statusIndicator.textContent = 'Connected to video stream';
+              statusIndicator.className = 'status connected';
+            } else {
+              statusIndicator.textContent = 'Waiting for video stream...';
+              statusIndicator.className = 'status connecting';
+            }
+            return;
+          }
+        } catch (e) {
+          // Not JSON, treat as binary data
+        }
+        
+        // Handle binary data (MJPEG frames)
+        if (event.data instanceof Blob) {
+          const reader = new FileReader();
+          
+          reader.onload = function() {
+            const img = new Image();
+            img.onload = function() {
+              // Resize canvas if needed
+              if (canvas.width !== img.width || canvas.height !== img.height) {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                resolutionInfo.textContent = `${img.width} × ${img.height}`;
+              }
+              
+              // Draw the image on canvas
+              ctx.drawImage(img, 0, 0);
+              
+              // Update frame count
+              frameCount++;
+              framesReceived.textContent = frameCount;
+            };
+            
+            img.src = reader.result;
+          };
+          
+          reader.readAsDataURL(event.data);
+        }
+      };
+      
+      ws.onclose = function() {
+        statusIndicator.textContent = 'Disconnected';
+        statusIndicator.className = 'status disconnected';
+      };
+      
+      ws.onerror = function(error) {
+        console.error('WebSocket error:', error);
+        statusIndicator.textContent = 'Error connecting';
+        statusIndicator.className = 'status disconnected';
+      };
+    }
+    
+    // Update connection time
+    function updateConnectionTime() {
+      if (connectionTime) {
+        const now = new Date();
+        const diff = now - connectionTime;
+        const seconds = Math.floor(diff / 1000) % 60;
+        const minutes = Math.floor(diff / (1000 * 60)) % 60;
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        
+        connectedSince.textContent = 
+          `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+    }
+    
+    // Toggle fullscreen
+    function toggleFullscreen() {
+      const videoContainer = document.querySelector('.video-container');
+      
+      if (!document.fullscreenElement) {
+        if (videoContainer.requestFullscreen) {
+          videoContainer.requestFullscreen();
+        } else if (videoContainer.webkitRequestFullscreen) {
+          videoContainer.webkitRequestFullscreen();
+        } else if (videoContainer.msRequestFullscreen) {
+          videoContainer.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
+      }
+    }
+    
+    // Event listeners
+    reconnectButton.addEventListener('click', connectWebSocket);
+    fullscreenButton.addEventListener('click', toggleFullscreen);
+    
+    // Initial connection
+    connectWebSocket();
+  </script>
+</body>
+</html>

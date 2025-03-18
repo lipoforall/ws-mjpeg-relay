@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  ws-mjpeg-relay:
+    container_name: ws-mjpeg-relay
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "10000:10000"
+    environment:
+      - SOURCE_WEBSOCKET=ws://10.242.176.200:8888/ws
+      - HOST_IP=172.27.65.25
+      - PORT=10000
+      - RECONNECT_INTERVAL=5000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'  # Limit to 50% of CPU
