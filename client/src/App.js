@@ -120,16 +120,29 @@ function App() {
   }, []);
 
   const handleSettingsChange = () => {
-    // Reconnect WebSocket with new settings
+    // Close existing WebSocket connection
     if (wsRef.current) {
       wsRef.current.close();
+      wsRef.current = null;
     }
-    // Fetch updated source info
-    fetchSourceInfo();
-    // Reset connection time and frames
-    connectionTimeRef.current = null;
+    
+    // Clear canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Reset all state
+    setStatus('connecting');
+    setResolution('--');
     setConnectedSince('--');
     setFramesReceived(0);
+    connectionTimeRef.current = null;
+    
+    // Fetch updated source info
+    fetchSourceInfo();
+    
     // Reconnect WebSocket
     connectWebSocket();
   };
@@ -137,7 +150,7 @@ function App() {
   return (
     <div className="container">
       <div className="header">
-        <h1>MJPEG Stream Viewer</h1>
+        <h1>WebSockets Video Stream Viewer</h1>
         <button className="settings-button" onClick={() => setShowSettings(true)}>
           ⚙️ Settings
         </button>

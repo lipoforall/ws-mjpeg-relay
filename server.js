@@ -39,6 +39,9 @@ app.post('/api/config', (req, res) => {
   // Update the source WebSocket URL
   sourceWebSocket = newSourceWebSocket;
   
+  // Clear the last frame buffer
+  lastFrame = null;
+  
   // Reconnect to the new source
   if (sourceWs) {
     sourceWs.close();
