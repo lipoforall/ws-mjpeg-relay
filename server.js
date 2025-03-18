@@ -13,7 +13,7 @@ const reconnectInterval = process.env.RECONNECT_INTERVAL || 5000; // 5 seconds
 const app = express();
 const server = http.createServer(app);
 
-// Serve static files
+// Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API endpoint to expose configuration
@@ -25,10 +25,16 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // Create WebSocket server
 const wss = new WebSocket.Server({ 
   server,
-  path: '/ws'  // Explicitly set the path to /ws
+  path: '/ws'
 });
 
 // Connection to source WebSocket
@@ -53,6 +59,16 @@ function connectToSource() {
   sourceWs.on('open', () => {
     console.log('Connected to source WebSocket');
     isConnected = true;
+    
+    // Notify all clients of connection status
+    connectedClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'status',
+          connected: true
+        }));
+      }
+    });
   });
 
   sourceWs.on('message', (data) => {
@@ -72,6 +88,16 @@ function connectToSource() {
   sourceWs.on('close', () => {
     console.log('Source WebSocket closed, attempting to reconnect...');
     isConnected = false;
+    
+    // Notify all clients of connection status
+    connectedClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'status',
+          connected: false
+        }));
+      }
+    });
     
     // Schedule reconnection
     console.log(`Will attempt to reconnect in ${reconnectInterval}ms`);

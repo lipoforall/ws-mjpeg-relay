@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebSocket Video Stream Viewer</title>
+  <title>MGU02 OP60</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -109,7 +109,6 @@
       <div id="statusIndicator" class="status connecting">Connecting to stream...</div>
       <div>
         <button id="reconnectButton">Reconnect</button>
-        <button id="fullscreenButton">Fullscreen</button>
       </div>
     </div>
     
@@ -128,7 +127,6 @@
     const ctx = canvas.getContext('2d');
     const statusIndicator = document.getElementById('statusIndicator');
     const reconnectButton = document.getElementById('reconnectButton');
-    const fullscreenButton = document.getElementById('fullscreenButton');
     const resolutionInfo = document.getElementById('resolutionInfo');
     const connectedSince = document.getElementById('connectedSince');
     const framesReceived = document.getElementById('framesReceived');
@@ -253,32 +251,8 @@
       }
     }
     
-    // Toggle fullscreen
-    function toggleFullscreen() {
-      const videoContainer = document.querySelector('.video-container');
-      
-      if (!document.fullscreenElement) {
-        if (videoContainer.requestFullscreen) {
-          videoContainer.requestFullscreen();
-        } else if (videoContainer.webkitRequestFullscreen) {
-          videoContainer.webkitRequestFullscreen();
-        } else if (videoContainer.msRequestFullscreen) {
-          videoContainer.msRequestFullscreen();
-        }
-      } else {
-        if (document.exitFullscreen) {
-          document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) {
-          document.webkitExitFullscreen();
-        } else if (document.msExitFullscreen) {
-          document.msExitFullscreen();
-        }
-      }
-    }
-    
     // Event listeners
     reconnectButton.addEventListener('click', connectWebSocket);
-    fullscreenButton.addEventListener('click', toggleFullscreen);
     
     // Initial connection
     connectWebSocket();

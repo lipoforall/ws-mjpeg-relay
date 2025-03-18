@@ -1,0 +1,71 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  text-align: center;
+}
+
+.title {
+  color: #2c3e50;
+}
+
+.video-container {
+  margin: 20px auto;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.controls {
+  margin: 20px 0;
+  padding: 10px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.status {
+  display: inline-block;
+  margin: 10px 0;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  color: white;
+}
+
+.status.connected {
+  background-color: #27ae60;
+}
+
+.status.disconnected {
+  background-color: #e74c3c;
+}
+
+.status.connecting {
+  background-color: #f39c12;
+}
+
+.button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0 5px;
+  font-size: 14px;
+}
+
+.button:hover {
+  background-color: #2980b9;
+}
+
+.info-panel {
+  margin-top: 20px;
+  text-align: left;
+  background-color: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+} 
