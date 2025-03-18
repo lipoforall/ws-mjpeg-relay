@@ -5,7 +5,7 @@ import './App.css';
 function App() {
   const canvasRef = useRef(null);
   const wsRef = useRef(null);
-  const [status, setStatus] = useState('connecting');
+  const [status, setStatus] = useState('disconnected');
   const [sourceInfo, setSourceInfo] = useState('');
   const [resolution, setResolution] = useState('--');
   const [connectedSince, setConnectedSince] = useState('--');
@@ -24,6 +24,18 @@ function App() {
     }
   };
 
+  const fetchSourceInfo = async () => {
+    try {
+      const response = await fetch('/api/config');
+      const data = await response.json();
+      if (data && data.sourceWebSocket) {
+        setSourceInfo(data.sourceWebSocket);
+      }
+    } catch (error) {
+      console.error('Error fetching config:', error);
+    }
+  };
+
   const connectWebSocket = () => {
     setStatus('connecting');
     setFramesReceived(0);
@@ -37,7 +49,8 @@ function App() {
     wsRef.current = new WebSocket(wsUrl);
 
     wsRef.current.onopen = () => {
-      setStatus('connected');
+      console.log('WebSocket connection opened');
+      setStatus('connecting'); // Keep as connecting until we get status from server
       connectionTimeRef.current = new Date();
       updateConnectionTime();
     };
@@ -46,7 +59,8 @@ function App() {
       try {
         const jsonData = JSON.parse(event.data);
         if (jsonData.type === 'status') {
-          setStatus(jsonData.connected ? 'connected' : 'connecting');
+          console.log('Received status update:', jsonData.connected);
+          setStatus(jsonData.connected ? 'connected' : 'disconnected');
           return;
         }
       } catch (e) {
@@ -77,24 +91,22 @@ function App() {
     };
 
     wsRef.current.onclose = () => {
+      console.log('WebSocket connection closed');
       setStatus('disconnected');
+      connectionTimeRef.current = null;
+      setConnectedSince('--');
     };
 
-    wsRef.current.onerror = () => {
+    wsRef.current.onerror = (error) => {
+      console.error('WebSocket error:', error);
       setStatus('disconnected');
+      connectionTimeRef.current = null;
+      setConnectedSince('--');
     };
   };
 
   useEffect(() => {
-    fetch('/api/config')
-      .then(response => response.json())
-      .then(data => {
-        if (data && data.sourceWebSocket) {
-          setSourceInfo(data.sourceWebSocket);
-        }
-      })
-      .catch(error => console.error('Error fetching config:', error));
-
+    fetchSourceInfo();
     connectWebSocket();
 
     const interval = setInterval(updateConnectionTime, 1000);
@@ -112,6 +124,13 @@ function App() {
     if (wsRef.current) {
       wsRef.current.close();
     }
+    // Fetch updated source info
+    fetchSourceInfo();
+    // Reset connection time and frames
+    connectionTimeRef.current = null;
+    setConnectedSince('--');
+    setFramesReceived(0);
+    // Reconnect WebSocket
     connectWebSocket();
   };
 

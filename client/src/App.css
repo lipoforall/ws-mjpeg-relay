@@ -38,22 +38,23 @@
   background-color: #000;
   border-radius: 8px;
   overflow: hidden;
+  margin-bottom: 20px;
 }
 
-.video-container img {
+.video-container canvas {
   width: 100%;
   height: auto;
   display: block;
 }
 
 .controls {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 10px;
   background: rgba(0, 0, 0, 0.7);
-  color: white;
+  border-radius: 8px;
+  margin-bottom: 20px;
 }
 
 .status-container {
@@ -66,21 +67,50 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
+  position: relative;
   background-color: #ff0000;
+  box-shadow: 0 0 5px rgba(255, 0, 0, 0.5);
+}
+
+.status-led::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 .status-led.connected {
   background-color: #00ff00;
-  animation: pulse 1.5s infinite;
+  box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+.status-led.connected::before {
+  background-color: #00ff00;
+  opacity: 0.8;
 }
 
 .status-led.connecting {
   background-color: #ffff00;
-  animation: pulse 1.5s infinite;
+  box-shadow: 0 0 5px rgba(255, 255, 0, 0.5);
+}
+
+.status-led.connecting::before {
+  background-color: #ffff00;
+  opacity: 0.8;
 }
 
 .status-led.disconnected {
   background-color: #ff0000;
+  box-shadow: 0 0 5px rgba(255, 0, 0, 0.5);
+}
+
+.status-led.disconnected::before {
+  background-color: #ff0000;
+  opacity: 0.8;
 }
 
 .status-text {
@@ -88,41 +118,57 @@
   color: #fff;
 }
 
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.2);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 .button {
-  background-color: #3498db;
-  color: white;
+  padding: 8px 16px;
   border: none;
-  padding: 10px 20px;
   border-radius: 4px;
+  background-color: #007bff;
+  color: white;
   cursor: pointer;
-  margin: 0 5px;
   font-size: 14px;
+  transition: background-color 0.2s;
 }
 
 .button:hover {
-  background-color: #2980b9;
+  background-color: #0056b3;
 }
 
 .info-panel {
-  margin-top: 20px;
-  text-align: left;
-  background-color: #fff;
-  padding: 15px;
+  background-color: #f8f9fa;
+  padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.info-panel h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.info-panel p {
+  margin: 8px 0;
+  color: #666;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  25% {
+    transform: scale(1.2);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.4;
+  }
+  75% {
+    transform: scale(1.2);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
 } 
