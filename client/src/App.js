@@ -6,7 +6,6 @@ function App() {
   const wsRef = useRef(null);
   const [status, setStatus] = useState('disconnected');
   const [sourceInfo, setSourceInfo] = useState('');
-  const [resolution, setResolution] = useState('--');
   const [connectedSince, setConnectedSince] = useState('--');
   const [framesReceived, setFramesReceived] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -90,7 +89,6 @@ function App() {
               if (canvas.width !== img.width || canvas.height !== img.height) {
                 canvas.width = img.width;
                 canvas.height = img.height;
-                setResolution(`${img.width} × ${img.height}`);
               }
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0);
@@ -241,7 +239,6 @@ function App() {
       <div className="info-panel">
         <h3>Stream Information</h3>
         <p><strong>Source:</strong> {sourceInfo}</p>
-        <p><strong>Resolution:</strong> {resolution}</p>
         <p><strong>Connected since:</strong> {connectedSince}</p>
         <p><strong>Frames received:</strong> {framesReceived}</p>
       </div>
