@@ -267,6 +267,9 @@ function checkAndManageSourceConnection() {
       reconnectTimer = null;
     }
     isConnected = false;
+    lastFrame = null;
+    lastFrameTime = 0;
+    frameDropCount = 0;
   } else if (!sourceWs && connectedClients.size > 0) {
     console.log('Clients connected but no source connection, establishing connection');
     connectToSource();
@@ -310,6 +313,8 @@ wss.on('connection', (ws) => {
 
   ws.on('error', (error) => {
     console.error(`Client WebSocket error from IP ${clientIP}:`, error);
+    // Also check connection status on error
+    checkAndManageSourceConnection();
   });
 });
 
@@ -321,4 +326,7 @@ server.listen(port, () => {
   
   // Only connect to source if we have clients (which we don't at startup)
   console.log('Waiting for clients to connect before establishing source connection');
+  
+  // Ensure we're disconnected from source at startup
+  checkAndManageSourceConnection();
 });
