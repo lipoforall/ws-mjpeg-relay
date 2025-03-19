@@ -184,7 +184,10 @@ function App() {
         <h1>WebSocket Video Stream Viewer</h1>
         <button 
           className="settings-button"
-          onClick={() => setShowSettings(!showSettings)}
+          onClick={() => {
+            setNewSourceUrl(sourceInfo); // Pre-fill with current source
+            setShowSettings(!showSettings);
+          }}
           title="Settings"
         >
           <i className="fas fa-cog"></i>
