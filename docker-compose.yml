@@ -2,6 +2,7 @@ version: '3'
 
 services:
   mjpeg-relay:
+    container_name: WS-Stream-Viewer
     build: .
     ports:
       - "10000:10000"
