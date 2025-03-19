@@ -19,7 +19,7 @@ const server = http.createServer(app);
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Serve static files from the React app
+// Serve static files from the React build directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API endpoint to expose configuration
@@ -79,8 +79,7 @@ app.post('/api/config', (req, res) => {
   res.json({ message: 'Configuration updated successfully' });
 });
 
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
+// Handle all other routes by serving the React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

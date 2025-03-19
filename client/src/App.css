@@ -5,22 +5,25 @@
   --bg-darker: #111111;
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;
-  --card-bg: rgba(20, 20, 20, 0.8);
+  --card-bg: rgba(20, 20, 20, 0.9);
   --border-color: rgba(255, 107, 0, 0.1);
 }
 
 body {
-  background: linear-gradient(135deg, var(--bg-dark), var(--bg-darker));
-  color: var(--text-primary);
   margin: 0;
-  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #121212;
+  color: var(--text-primary);
 }
 
 .container {
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .header {
@@ -28,21 +31,12 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
-  padding: 1rem;
-  background: var(--card-bg);
-  border-radius: 1rem;
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .header h1 {
   margin: 0;
-  font-size: 1.875rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--primary-color), #FF8533);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 2rem;
+  color: var(--text-primary);
 }
 
 .settings-button {
@@ -190,9 +184,12 @@ body {
 }
 
 .button:hover {
-  background: var(--primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 6px rgba(255, 107, 0, 0.3);
+}
+
+.button:active {
+  transform: translateY(0);
 }
 
 .info-panel {
@@ -200,31 +197,27 @@ body {
   padding: 1.5rem;
   border-radius: 1rem;
   border: 1px solid var(--border-color);
-  backdrop-filter: blur(10px);
 }
 
 .info-panel h3 {
   margin: 0 0 1rem 0;
   color: var(--text-primary);
   font-size: 1.25rem;
-  font-weight: 600;
 }
 
 .info-panel p {
   margin: 0.5rem 0;
   color: var(--text-secondary);
-  font-size: 0.875rem;
 }
 
 .info-panel strong {
   color: var(--text-primary);
-  font-weight: 500;
 }
 
 @keyframes pulse {
   0% {
     transform: scale(1);
-    opacity: 0.8;
+    opacity: 1;
   }
   50% {
     transform: scale(1.5);
@@ -232,7 +225,7 @@ body {
   }
   100% {
     transform: scale(1);
-    opacity: 0.8;
+    opacity: 1;
   }
 }
 

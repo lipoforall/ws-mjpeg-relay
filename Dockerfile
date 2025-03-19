@@ -1,36 +1,39 @@
-# Build stage for React client
-FROM node:18-alpine as client-builder
+# Build stage
+FROM node:18-alpine as build
 
-WORKDIR /app/client
-
-# Copy client package files and install dependencies
-COPY client/package*.json ./
-RUN npm install
-
-# Copy client source code and build
-COPY client/ ./
-RUN npm run build
-
-# Final stage for server
-FROM node:18-alpine
-
+# Set working directory
 WORKDIR /app
 
+# Copy package files
+COPY package*.json ./
+COPY client/package*.json ./client/
+
 # Install dependencies
-RUN apk add --no-cache python3 make g++
+RUN npm install
+RUN cd client && npm install
+
+# Copy source code
+COPY . .
+
+# Build the React app
+RUN cd client && npm run build
+
+# Production stage
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package.json ./
-RUN npm install
+COPY package*.json ./
+RUN npm install --production
 
-# Copy server source code
+# Copy built React app and server code
+COPY --from=build /app/client/build ./public
 COPY server.js ./
-
-# Copy built client files
-COPY --from=client-builder /app/client/build ./public
 
 # Expose port
 EXPOSE 10000
 
-# Start the application
+# Start the server
 CMD ["node", "server.js"]

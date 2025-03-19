@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Settings from './components/Settings';
 import './App.css';
 
 function App() {
@@ -11,7 +10,6 @@ function App() {
   const [connectedSince, setConnectedSince] = useState('--');
   const [framesReceived, setFramesReceived] = useState(0);
   const connectionTimeRef = useRef(null);
-  const [showSettings, setShowSettings] = useState(false);
 
   const updateConnectionTime = () => {
     if (connectionTimeRef.current) {
@@ -61,24 +59,6 @@ function App() {
         if (jsonData.type === 'status') {
           console.log('Received status update:', jsonData.connected);
           setStatus(jsonData.connected ? 'connected' : 'disconnected');
-          
-          // Handle source change
-          if (jsonData.sourceChanged) {
-            console.log('Source changed, reconnecting...');
-            // Clear canvas
-            const canvas = canvasRef.current;
-            if (canvas) {
-              const ctx = canvas.getContext('2d');
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
-            // Reset state
-            setResolution('--');
-            setFramesReceived(0);
-            connectionTimeRef.current = null;
-            setConnectedSince('--');
-            // Reconnect after a short delay
-            setTimeout(connectWebSocket, 1000);
-          }
           return;
         }
       } catch (e) {
@@ -144,41 +124,10 @@ function App() {
     };
   }, []);
 
-  const handleSettingsChange = () => {
-    // Close existing WebSocket connection
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    
-    // Clear canvas
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    // Reset all state
-    setStatus('connecting');
-    setResolution('--');
-    setConnectedSince('--');
-    setFramesReceived(0);
-    connectionTimeRef.current = null;
-    
-    // Fetch updated source info
-    fetchSourceInfo();
-    
-    // Reconnect WebSocket after a short delay
-    setTimeout(connectWebSocket, 1000);
-  };
-
   return (
     <div className="container">
       <div className="header">
-        <h1>WebSockets Video Stream Viewer</h1>
-        <button className="settings-button" onClick={() => setShowSettings(true)}>
-          ⚙️ Settings
-        </button>
+        <h1>WebSocket Video Stream Viewer</h1>
       </div>
       
       <div className="video-container">
@@ -206,15 +155,6 @@ function App() {
         <p><strong>Connected since:</strong> {connectedSince}</p>
         <p><strong>Frames received:</strong> {framesReceived}</p>
       </div>
-
-      {showSettings && (
-        <Settings 
-          onClose={() => {
-            setShowSettings(false);
-            handleSettingsChange();
-          }}
-        />
-      )}
     </div>
   );
 }
