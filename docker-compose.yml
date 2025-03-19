@@ -10,4 +10,5 @@ services:
       - HOST_IP=172.27.65.25
       - PORT=10000
       - RECONNECT_INTERVAL=5000
+      - MAX_FPS=30
     restart: unless-stopped

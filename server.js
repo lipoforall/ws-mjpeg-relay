@@ -8,6 +8,9 @@ let sourceWebSocket = process.env.SOURCE_WEBSOCKET || 'ws://10.242.176.200:8888/
 const hostIP = process.env.HOST_IP || '172.27.65.25';
 const port = process.env.PORT || 10000;
 const reconnectInterval = process.env.RECONNECT_INTERVAL || 5000; // 5 seconds
+const MAX_FPS = process.env.MAX_FPS || 30; // Maximum frames per second
+const FRAME_INTERVAL = 1000 / MAX_FPS; // Time between frames in milliseconds
+const LOG_INTERVAL = 30000; // Log connection status every 30 seconds
 
 // Create express app
 const app = express();
@@ -69,6 +72,10 @@ let reconnectTimer = null;
 let isConnected = false;
 let connectedClients = new Set();
 let lastFrame = null;
+let lastFrameTime = 0;
+let lastLogTime = 0;
+let pendingFrame = null;
+let frameDropCount = 0;
 
 // Function to get client IP
 function getClientIP(ws) {
@@ -78,6 +85,12 @@ function getClientIP(ws) {
 
 // Function to log connection status (non-blocking)
 function logConnectionStatus() {
+  const now = Date.now();
+  if (now - lastLogTime < LOG_INTERVAL) {
+    return;
+  }
+  lastLogTime = now;
+  
   setTimeout(() => {
     console.log('\n=== Connection Status ===');
     console.log(`Total connected clients: ${connectedClients.size}`);
@@ -85,21 +98,48 @@ function logConnectionStatus() {
     connectedClients.forEach(ws => {
       console.log(`- ${getClientIP(ws)}`);
     });
+    console.log(`Frame drop rate: ${frameDropCount} frames`);
     console.log('=====================\n');
+    frameDropCount = 0; // Reset counter
   }, 0);
 }
 
-// Function to broadcast frame to all clients
+// Function to broadcast frame to all clients with rate limiting
 function broadcastFrame(frame) {
+  const now = Date.now();
+  
+  // If we're receiving frames too fast, drop some
+  if (now - lastFrameTime < FRAME_INTERVAL) {
+    frameDropCount++;
+    return;
+  }
+  
+  lastFrameTime = now;
+  lastFrame = frame;
+  
+  // Use a more efficient way to broadcast
   const clients = Array.from(connectedClients);
-  clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
+  const openClients = clients.filter(ws => ws.readyState === WebSocket.OPEN);
+  
+  if (openClients.length === 0) return;
+  
+  // Use Promise.all for parallel sending
+  Promise.all(openClients.map(ws => {
+    return new Promise((resolve) => {
       try {
-        ws.send(frame);
+        ws.send(frame, { binary: true }, (error) => {
+          if (error) {
+            console.error('Error sending frame to client:', error);
+          }
+          resolve();
+        });
       } catch (error) {
         console.error('Error sending frame to client:', error);
+        resolve();
       }
-    }
+    });
+  })).catch(error => {
+    console.error('Error in broadcast:', error);
   });
 }
 
@@ -113,16 +153,25 @@ function connectToSource() {
   // If there are no clients connected, don't establish connection
   if (connectedClients.size === 0) {
     console.log('No clients connected, skipping connection to source');
+    if (sourceWs) {
+      sourceWs.close();
+      sourceWs = null;
+    }
+    isConnected = false;
     return;
   }
   
   console.log(`Attempting to connect to source: ${sourceWebSocket}`);
   
-  sourceWs = new WebSocket(sourceWebSocket);
+  sourceWs = new WebSocket(sourceWebSocket, {
+    perMessageDeflate: false, // Disable compression for better performance
+    maxPayload: 50 * 1024 * 1024 // 50MB max payload
+  });
   
   sourceWs.on('open', () => {
     console.log('Connected to source WebSocket');
     isConnected = true;
+    frameDropCount = 0; // Reset frame drop counter
     
     connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -138,9 +187,8 @@ function connectToSource() {
   let lastFrameTime = Date.now();
   
   sourceWs.on('message', (data) => {
-    lastFrame = data;
     lastFrameTime = Date.now();
-    isConnected = true; // Ensure connection status is true when frames are received
+    isConnected = true;
     broadcastFrame(data);
   });
 
@@ -175,6 +223,8 @@ function connectToSource() {
       reconnectTimer = setTimeout(connectToSource, reconnectInterval);
     } else {
       console.log('No clients connected, skipping reconnection attempt');
+      sourceWs = null;
+      isConnected = false;
     }
   });
 }
@@ -186,6 +236,10 @@ function checkAndManageSourceConnection() {
     if (sourceWs) {
       sourceWs.close();
       sourceWs = null;
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
     }
     isConnected = false;
   } else if (!sourceWs && connectedClients.size > 0) {
