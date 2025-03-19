@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:16-alpine as build
 
 # Set working directory
 WORKDIR /app
@@ -21,19 +21,27 @@ RUN cd client && npm run build
 # Production stage
 FROM node:18-alpine
 
+# Install FFmpeg and other dependencies
+RUN apk add --no-cache ffmpeg bash
+
 # Set working directory
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy package files
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install --production
 
-# Copy built React app and server code
+# Copy server files
 COPY --from=build /app/client/build ./public
 COPY server.js ./
+
+# Create recordings directory
+RUN mkdir -p recordings && chmod 777 recordings
 
 # Expose port
 EXPOSE 10000
 
-# Start the server
+# Command to run the server
 CMD ["node", "server.js"]

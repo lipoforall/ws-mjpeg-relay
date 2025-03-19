@@ -143,6 +143,11 @@ function App() {
             setConnectedSince('--');
           }
           return;
+        } else if (jsonData.type === 'recording_error') {
+          console.error('Recording error:', jsonData.message);
+          setIsRecordingEnabled(false);
+          alert(`Recording failed: ${jsonData.message}`);
+          return;
         }
       } catch (e) {
         // Not JSON, treat as binary data

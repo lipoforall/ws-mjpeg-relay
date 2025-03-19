@@ -88,26 +88,95 @@ function startRecording() {
   currentRecordingFile = path.join(RECORDINGS_DIR, `recording_${timestamp}.mp4`);
   recordingStartTime = Date.now();
 
-  // Start FFmpeg process
-  recordingProcess = spawn('ffmpeg', [
-    '-i', 'pipe:0',
-    '-c:v', 'libx264',
-    '-preset', 'medium',
-    '-crf', '23',
-    '-y',
-    currentRecordingFile
-  ]);
+  console.log(`Starting recording to ${currentRecordingFile}`);
+  
+  try {
+    // Check if FFmpeg is available
+    const checkProcess = spawn('ffmpeg', ['-version']);
+    let ffmpegVersion = '';
+    
+    checkProcess.stdout.on('data', (data) => {
+      ffmpegVersion += data.toString();
+    });
+    
+    checkProcess.on('error', (error) => {
+      console.error('Error checking FFmpeg availability:', error.message);
+      console.error('FFmpeg might not be installed in the Docker container');
+      config.isRecordingEnabled = false;
+      recordingStartTime = null;
+      currentRecordingFile = null;
+      
+      // Notify connected clients about the recording failure
+      connectedClients.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'recording_error',
+            message: 'FFmpeg not available. Recording failed to start.'
+          }));
+        }
+      });
+      
+      return;
+    });
+    
+    checkProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`FFmpeg check failed with code ${code}`);
+        config.isRecordingEnabled = false;
+        recordingStartTime = null;
+        currentRecordingFile = null;
+        return;
+      }
+      
+      console.log(`FFmpeg is available: ${ffmpegVersion.split('\n')[0]}`);
+      
+      // Start FFmpeg process
+      recordingProcess = spawn('ffmpeg', [
+        '-f', 'mjpeg', // Specify input format as MJPEG
+        '-i', 'pipe:0',
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '23',
+        '-y',
+        currentRecordingFile
+      ]);
 
-  recordingProcess.stderr.on('data', (data) => {
-    console.log(`FFmpeg: ${data}`);
-  });
+      console.log('FFmpeg process started');
 
-  recordingProcess.on('close', (code) => {
-    console.log(`FFmpeg process exited with code ${code}`);
-    recordingProcess = null;
-    currentRecordingFile = null;
+      recordingProcess.stderr.on('data', (data) => {
+        const output = data.toString();
+        console.log(`FFmpeg: ${output}`);
+      });
+
+      recordingProcess.on('error', (error) => {
+        console.error('Error starting FFmpeg process:', error.message);
+        config.isRecordingEnabled = false;
+        recordingStartTime = null;
+        currentRecordingFile = null;
+      });
+
+      recordingProcess.on('close', (code) => {
+        console.log(`FFmpeg process exited with code ${code}`);
+        
+        // Check if file was created
+        if (fs.existsSync(currentRecordingFile)) {
+          const stats = fs.statSync(currentRecordingFile);
+          console.log(`Recording file created: ${currentRecordingFile}, size: ${stats.size} bytes`);
+        } else {
+          console.error(`Recording file was not created: ${currentRecordingFile}`);
+        }
+        
+        recordingProcess = null;
+        currentRecordingFile = null;
+        recordingStartTime = null;
+      });
+    });
+  } catch (error) {
+    console.error('Error when attempting to start recording:', error);
+    config.isRecordingEnabled = false;
     recordingStartTime = null;
-  });
+    currentRecordingFile = null;
+  }
 }
 
 // Function to stop recording
@@ -309,8 +378,28 @@ function broadcastFrame(frame) {
   if (config.isRecordingEnabled && recordingProcess) {
     try {
       recordingProcess.stdin.write(frame);
+      // Log recording progress periodically
+      if (recordingStartTime && now - recordingStartTime > 0 && (now - recordingStartTime) % 10000 < 1000) {
+        const recordingDuration = Math.floor((now - recordingStartTime) / 1000);
+        console.log(`Recording in progress: ${recordingDuration}s, frame size: ${frame.length} bytes`);
+        
+        // Check if the recording file exists and is growing
+        if (currentRecordingFile && fs.existsSync(currentRecordingFile)) {
+          const stats = fs.statSync(currentRecordingFile);
+          console.log(`Current recording file size: ${stats.size} bytes`);
+        }
+      }
     } catch (error) {
       console.error('Error writing to recording process:', error);
+      if (recordingProcess) {
+        console.log('Attempting to restart recording due to write error');
+        stopRecording();
+        setTimeout(() => {
+          if (config.isRecordingEnabled) {
+            startRecording();
+          }
+        }, 1000);
+      }
     }
   }
   

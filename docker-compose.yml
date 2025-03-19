@@ -12,4 +12,8 @@ services:
       - PORT=10000
       - RECONNECT_INTERVAL=5000
       - MAX_FPS=30
+      - RECORDINGS_DIR=/app/recordings
+      - MAX_RECORDINGS=10
+    volumes:
+      - ./recordings:/app/recordings
     restart: unless-stopped
