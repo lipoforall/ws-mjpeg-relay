@@ -301,4 +301,110 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.recordings-panel {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.recordings-panel h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.recordings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recording-item {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recording-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.recording-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.recording-size {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.recording-date {
+  color: #888;
+  font-size: 0.8em;
+}
+
+.recording-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.recording-actions .button {
+  padding: 8px 16px;
+  font-size: 0.9em;
+}
+
+.recording-actions .button.delete {
+  background-color: #dc3545;
+  color: white;
+  border-color: #dc3545;
+}
+
+.recording-actions .button.delete:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.button.recording-active {
+  background-color: #dc3545;
+  color: white;
+  border-color: #dc3545;
+}
+
+.button.recording-active:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.form-group select,
+.form-group input[type="number"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1em;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
 } 

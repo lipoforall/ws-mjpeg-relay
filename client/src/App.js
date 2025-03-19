@@ -11,6 +11,11 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRecordingEnabled, setIsRecordingEnabled] = useState(false);
+  const [recordingInterval, setRecordingInterval] = useState(5);
+  const [maxRecordings, setMaxRecordings] = useState(10);
+  const [recordings, setRecordings] = useState([]);
+  const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
   const connectionTimeRef = useRef(null);
 
   const updateConnectionTime = () => {
@@ -28,11 +33,79 @@ function App() {
     try {
       const response = await fetch('/api/config');
       const data = await response.json();
-      if (data && data.sourceWebSocket) {
+      if (data) {
         setSourceInfo(data.sourceWebSocket);
+        setIsRecordingEnabled(data.isRecordingEnabled);
+        setRecordingInterval(data.recordingInterval);
+        setMaxRecordings(data.maxRecordings);
       }
     } catch (error) {
       console.error('Error fetching config:', error);
+    }
+  };
+
+  const fetchRecordings = async () => {
+    setIsLoadingRecordings(true);
+    try {
+      const response = await fetch('/api/recordings');
+      const data = await response.json();
+      setRecordings(data);
+    } catch (error) {
+      console.error('Error fetching recordings:', error);
+    } finally {
+      setIsLoadingRecordings(false);
+    }
+  };
+
+  const deleteRecording = async (filename) => {
+    try {
+      const response = await fetch(`/api/recordings/${filename}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        fetchRecordings();
+      } else {
+        throw new Error('Failed to delete recording');
+      }
+    } catch (error) {
+      console.error('Error deleting recording:', error);
+      alert('Failed to delete recording. Please try again.');
+    }
+  };
+
+  const updateConfig = async (updates) => {
+    setIsUpdating(true);
+    try {
+      const response = await fetch('/api/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update configuration');
+      }
+      
+      // Update local state
+      if (updates.sourceWebSocket) {
+        setSourceInfo(updates.sourceWebSocket);
+      }
+      if (typeof updates.isRecordingEnabled === 'boolean') {
+        setIsRecordingEnabled(updates.isRecordingEnabled);
+      }
+      if (updates.recordingInterval) {
+        setRecordingInterval(updates.recordingInterval);
+      }
+      if (updates.maxRecordings) {
+        setMaxRecordings(updates.maxRecordings);
+      }
+    } catch (error) {
+      console.error('Error updating config:', error);
+      alert('Failed to update configuration. Please try again.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -50,7 +123,7 @@ function App() {
 
     wsRef.current.onopen = () => {
       console.log('WebSocket connection opened');
-      setStatus('connecting'); // Keep as connecting until we get status from server
+      setStatus('connecting');
       connectionTimeRef.current = new Date();
       updateConnectionTime();
     };
@@ -62,7 +135,6 @@ function App() {
           console.log('Received status update:', jsonData);
           setStatus(jsonData.connected ? 'connected' : 'connecting');
           
-          // Handle source change notification
           if (jsonData.sourceChanged) {
             console.log('Source WebSocket URL changed');
             setStatus('connecting');
@@ -77,7 +149,6 @@ function App() {
       }
 
       if (event.data instanceof Blob) {
-        // If we receive a frame, we know we're connected
         setStatus('connected');
         
         const reader = new FileReader();
@@ -93,7 +164,6 @@ function App() {
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0);
               setFramesReceived(prev => prev + 1);
-              // Update connection time if not set already
               if (!connectionTimeRef.current) {
                 connectionTimeRef.current = new Date();
               }
@@ -125,34 +195,19 @@ function App() {
     
     setIsUpdating(true);
     try {
-      const response = await fetch('/api/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sourceWebSocket: newSourceUrl }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update source URL');
-      }
-      
-      setSourceInfo(newSourceUrl);
+      await updateConfig({ sourceWebSocket: newSourceUrl });
       setShowSettings(false);
       
-      // Close existing WebSocket connection
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
       
-      // Reset state
       setStatus('connecting');
       setFramesReceived(0);
       connectionTimeRef.current = null;
       setConnectedSince('--');
       
-      // Reconnect WebSocket to apply new source
       connectWebSocket();
     } catch (error) {
       console.error('Error updating source URL:', error);
@@ -162,14 +217,29 @@ function App() {
     }
   };
 
+  const toggleRecording = async () => {
+    try {
+      await updateConfig({ isRecordingEnabled: !isRecordingEnabled });
+      if (!isRecordingEnabled) {
+        fetchRecordings();
+      }
+    } catch (error) {
+      console.error('Error toggling recording:', error);
+      alert('Failed to toggle recording. Please try again.');
+    }
+  };
+
   useEffect(() => {
     fetchSourceInfo();
     connectWebSocket();
+    fetchRecordings();
 
     const interval = setInterval(updateConnectionTime, 1000);
+    const recordingsInterval = setInterval(fetchRecordings, 5000);
 
     return () => {
       clearInterval(interval);
+      clearInterval(recordingsInterval);
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -183,7 +253,7 @@ function App() {
         <button 
           className="settings-button"
           onClick={() => {
-            setNewSourceUrl(sourceInfo); // Pre-fill with current source
+            setNewSourceUrl(sourceInfo);
             setShowSettings(!showSettings);
           }}
           title="Settings"
@@ -207,13 +277,50 @@ function App() {
                 className="input-field"
               />
             </div>
-            <button 
-              className="button"
-              onClick={updateSourceUrl}
-              disabled={isUpdating || !newSourceUrl}
-            >
-              {isUpdating ? 'Updating...' : 'Update Source'}
-            </button>
+            <div className="form-group">
+              <label htmlFor="recordingInterval">Recording Interval (minutes):</label>
+              <select
+                id="recordingInterval"
+                value={recordingInterval}
+                onChange={(e) => updateConfig({ recordingInterval: parseInt(e.target.value) })}
+                className="input-field"
+              >
+                <option value="1">1 minute</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="maxRecordings">Maximum Recordings:</label>
+              <input
+                type="number"
+                id="maxRecordings"
+                value={maxRecordings}
+                onChange={(e) => updateConfig({ maxRecordings: parseInt(e.target.value) })}
+                min="1"
+                max="100"
+                className="input-field"
+              />
+            </div>
+            <div className="button-group">
+              <button 
+                className="button"
+                onClick={updateSourceUrl}
+                disabled={isUpdating || !newSourceUrl}
+              >
+                {isUpdating ? 'Updating...' : 'Update Source'}
+              </button>
+              <button 
+                className={`button ${isRecordingEnabled ? 'recording-active' : ''}`}
+                onClick={toggleRecording}
+                disabled={isUpdating}
+              >
+                {isRecordingEnabled ? 'Stop Recording' : 'Start Recording'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -241,6 +348,37 @@ function App() {
         <p><strong>Source:</strong> {sourceInfo}</p>
         <p><strong>Connected since:</strong> {connectedSince}</p>
         <p><strong>Frames received:</strong> {framesReceived}</p>
+        <p><strong>Recording status:</strong> {isRecordingEnabled ? 'Active' : 'Inactive'}</p>
+      </div>
+
+      <div className="recordings-panel">
+        <h3>Recordings</h3>
+        {isLoadingRecordings ? (
+          <p>Loading recordings...</p>
+        ) : recordings.length > 0 ? (
+          <div className="recordings-list">
+            {recordings.map(recording => (
+              <div key={recording.filename} className="recording-item">
+                <div className="recording-info">
+                  <span className="recording-name">{recording.filename}</span>
+                  <span className="recording-size">{(recording.size / (1024 * 1024)).toFixed(2)} MB</span>
+                  <span className="recording-date">{new Date(recording.created).toLocaleString()}</span>
+                </div>
+                <div className="recording-actions">
+                  <a href={recording.path} download className="button">Download</a>
+                  <button 
+                    className="button delete"
+                    onClick={() => deleteRecording(recording.filename)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p>No recordings available</p>
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,8 @@ const WebSocket = require('ws');
 const express = require('express');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
+const { spawn } = require('child_process');
 
 // Environment variables
 let sourceWebSocket = process.env.SOURCE_WEBSOCKET || 'ws://10.242.176.200:8888/ws';
@@ -11,6 +13,13 @@ const reconnectInterval = process.env.RECONNECT_INTERVAL || 5000; // 5 seconds
 const MAX_FPS = process.env.MAX_FPS || 30; // Maximum frames per second
 const FRAME_INTERVAL = 1000 / MAX_FPS; // Time between frames in milliseconds
 const LOG_INTERVAL = 30000; // Log connection status every 30 seconds
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || 'recordings';
+const MAX_RECORDINGS = process.env.MAX_RECORDINGS || 10; // Maximum number of recordings to keep
+
+// Create recordings directory if it doesn't exist
+if (!fs.existsSync(RECORDINGS_DIR)) {
+  fs.mkdirSync(RECORDINGS_DIR);
+}
 
 // Create express app
 const app = express();
@@ -22,61 +31,205 @@ app.use(express.json());
 // Serve static files from the React build directory
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve recordings directory
+app.use('/recordings', express.static(RECORDINGS_DIR));
+
+// Configuration state
+let config = {
+  sourceWebSocket,
+  hostIP,
+  port,
+  isRecordingEnabled: false,
+  recordingInterval: 5, // Default 5 minutes
+  maxRecordings: MAX_RECORDINGS
+};
+
+// Recording state
+let recordingProcess = null;
+let currentRecordingFile = null;
+let recordingStartTime = null;
+let recordings = [];
+
+// Function to get list of recordings
+function getRecordings() {
+  return new Promise((resolve, reject) => {
+    fs.readdir(RECORDINGS_DIR, (err, files) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      
+      const recordings = files
+        .filter(file => file.endsWith('.mp4'))
+        .map(file => {
+          const stats = fs.statSync(path.join(RECORDINGS_DIR, file));
+          return {
+            filename: file,
+            size: stats.size,
+            created: stats.birthtime,
+            path: `/recordings/${file}`
+          };
+        })
+        .sort((a, b) => b.created - a.created);
+      
+      resolve(recordings);
+    });
+  });
+}
+
+// Function to start recording
+function startRecording() {
+  if (recordingProcess) {
+    console.log('Recording already in progress');
+    return;
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  currentRecordingFile = path.join(RECORDINGS_DIR, `recording_${timestamp}.mp4`);
+  recordingStartTime = Date.now();
+
+  // Start FFmpeg process
+  recordingProcess = spawn('ffmpeg', [
+    '-i', 'pipe:0',
+    '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '23',
+    '-y',
+    currentRecordingFile
+  ]);
+
+  recordingProcess.stderr.on('data', (data) => {
+    console.log(`FFmpeg: ${data}`);
+  });
+
+  recordingProcess.on('close', (code) => {
+    console.log(`FFmpeg process exited with code ${code}`);
+    recordingProcess = null;
+    currentRecordingFile = null;
+    recordingStartTime = null;
+  });
+}
+
+// Function to stop recording
+function stopRecording() {
+  if (recordingProcess) {
+    recordingProcess.stdin.end();
+    recordingProcess = null;
+    currentRecordingFile = null;
+    recordingStartTime = null;
+  }
+}
+
+// Function to manage recordings (FIFO buffer)
+async function manageRecordings() {
+  try {
+    const recordings = await getRecordings();
+    if (recordings.length > config.maxRecordings) {
+      // Delete oldest recordings
+      const toDelete = recordings.slice(config.maxRecordings);
+      for (const recording of toDelete) {
+        fs.unlinkSync(path.join(RECORDINGS_DIR, recording.filename));
+        console.log(`Deleted old recording: ${recording.filename}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error managing recordings:', error);
+  }
+}
+
 // API endpoint to expose configuration
 app.get('/api/config', (req, res) => {
-  res.json({
-    sourceWebSocket,
-    hostIP,
-    port
-  });
+  res.json(config);
 });
 
 // API endpoint to update configuration
 app.post('/api/config', (req, res) => {
-  const { sourceWebSocket: newSourceWebSocket } = req.body;
+  const { sourceWebSocket: newSourceWebSocket, isRecordingEnabled, recordingInterval, maxRecordings } = req.body;
   
-  if (!newSourceWebSocket) {
-    return res.status(400).json({ error: 'Source WebSocket URL is required' });
-  }
-
-  // Update the source WebSocket URL
-  sourceWebSocket = newSourceWebSocket;
-  
-  // Clear all buffers and reset state
-  lastFrame = null;
-  lastFrameTime = 0;
-  frameDropCount = 0;
-  isConnected = false;
-  
-  // Clear any pending reconnect timer
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  
-  // Close existing source connection
-  if (sourceWs) {
-    sourceWs.close();
-    sourceWs = null;
-  }
-  
-  // Notify all clients about the source change
-  connectedClients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'status',
-        connected: false,
-        sourceChanged: true
-      }));
+  if (newSourceWebSocket) {
+    config.sourceWebSocket = newSourceWebSocket;
+    
+    // Clear all buffers and reset state
+    lastFrame = null;
+    lastFrameTime = 0;
+    frameDropCount = 0;
+    isConnected = false;
+    
+    // Clear any pending reconnect timer
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
     }
-  });
+    
+    // Close existing source connection
+    if (sourceWs) {
+      sourceWs.close();
+      sourceWs = null;
+    }
+    
+    // Notify all clients about the source change
+    connectedClients.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'status',
+          connected: false,
+          sourceChanged: true
+        }));
+      }
+    });
 
-  // Reconnect to the new source if we have clients
-  if (connectedClients.size > 0) {
-    connectToSource();
+    // Reconnect to the new source if we have clients or recording is enabled
+    if (connectedClients.size > 0 || config.isRecordingEnabled) {
+      connectToSource();
+    }
+  }
+
+  if (typeof isRecordingEnabled === 'boolean') {
+    config.isRecordingEnabled = isRecordingEnabled;
+    if (isRecordingEnabled) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
+  }
+
+  if (recordingInterval) {
+    config.recordingInterval = parseInt(recordingInterval);
+  }
+
+  if (maxRecordings) {
+    config.maxRecordings = parseInt(maxRecordings);
+    manageRecordings();
   }
 
   res.json({ message: 'Configuration updated successfully' });
+});
+
+// API endpoint to get recordings list
+app.get('/api/recordings', async (req, res) => {
+  try {
+    const recordings = await getRecordings();
+    res.json(recordings);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get recordings list' });
+  }
+});
+
+// API endpoint to delete recording
+app.delete('/api/recordings/:filename', (req, res) => {
+  const { filename } = req.params;
+  const filepath = path.join(RECORDINGS_DIR, filename);
+  
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).json({ error: 'Recording not found' });
+  }
+  
+  try {
+    fs.unlinkSync(filepath);
+    res.json({ message: 'Recording deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete recording' });
+  }
 });
 
 // Handle all other routes by serving the React app
@@ -123,6 +276,11 @@ function logConnectionStatus() {
       console.log(`- ${getClientIP(ws)}`);
     });
     console.log(`Frame drop rate: ${frameDropCount} frames`);
+    console.log(`Recording status: ${config.isRecordingEnabled ? 'Active' : 'Inactive'}`);
+    if (config.isRecordingEnabled && recordingStartTime) {
+      const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+      console.log(`Current recording duration: ${elapsed}s`);
+    }
     console.log('=====================\n');
     frameDropCount = 0; // Reset counter
   }, 0);
@@ -145,7 +303,16 @@ function broadcastFrame(frame) {
   const clients = Array.from(connectedClients);
   const openClients = clients.filter(ws => ws.readyState === WebSocket.OPEN);
   
-  if (openClients.length === 0) return;
+  if (openClients.length === 0 && !config.isRecordingEnabled) return;
+  
+  // Send frame to recording process if enabled
+  if (config.isRecordingEnabled && recordingProcess) {
+    try {
+      recordingProcess.stdin.write(frame);
+    } catch (error) {
+      console.error('Error writing to recording process:', error);
+    }
+  }
   
   // Use Promise.all for parallel sending
   Promise.all(openClients.map(ws => {
@@ -174,9 +341,9 @@ function connectToSource() {
     reconnectTimer = null;
   }
   
-  // If there are no clients connected, don't establish connection
-  if (connectedClients.size === 0) {
-    console.log('No clients connected, skipping connection to source');
+  // If there are no clients connected and recording is disabled, don't establish connection
+  if (connectedClients.size === 0 && !config.isRecordingEnabled) {
+    console.log('No clients connected and recording disabled, skipping connection to source');
     if (sourceWs) {
       sourceWs.close();
       sourceWs = null;
@@ -185,17 +352,17 @@ function connectToSource() {
     return;
   }
   
-  console.log(`Attempting to connect to source: ${sourceWebSocket}`);
+  console.log(`Attempting to connect to source: ${config.sourceWebSocket}`);
   
-  sourceWs = new WebSocket(sourceWebSocket, {
-    perMessageDeflate: false, // Disable compression for better performance
-    maxPayload: 50 * 1024 * 1024 // 50MB max payload
+  sourceWs = new WebSocket(config.sourceWebSocket, {
+    perMessageDeflate: false,
+    maxPayload: 50 * 1024 * 1024
   });
   
   sourceWs.on('open', () => {
     console.log('Connected to source WebSocket');
     isConnected = true;
-    frameDropCount = 0; // Reset frame drop counter
+    frameDropCount = 0;
     
     connectedClients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -207,7 +374,6 @@ function connectToSource() {
     });
   });
 
-  // Track when the last frame was received
   let lastFrameTime = Date.now();
   
   sourceWs.on('message', (data) => {
@@ -218,7 +384,6 @@ function connectToSource() {
 
   sourceWs.on('error', (error) => {
     console.error('Source WebSocket error:', error);
-    // Don't set isConnected to false if we're still receiving frames
     if (Date.now() - lastFrameTime > reconnectInterval) {
       isConnected = false;
     }
@@ -227,7 +392,6 @@ function connectToSource() {
   sourceWs.on('close', () => {
     console.log('Source WebSocket closed, attempting to reconnect...');
     
-    // Only set isConnected to false if we haven't received frames recently
     if (Date.now() - lastFrameTime > reconnectInterval) {
       isConnected = false;
       
@@ -241,22 +405,22 @@ function connectToSource() {
       });
     }
     
-    // Only reconnect if we have clients
-    if (connectedClients.size > 0) {
+    // Reconnect if we have clients or recording is enabled
+    if (connectedClients.size > 0 || config.isRecordingEnabled) {
       console.log(`Will attempt to reconnect in ${reconnectInterval}ms`);
       reconnectTimer = setTimeout(connectToSource, reconnectInterval);
     } else {
-      console.log('No clients connected, skipping reconnection attempt');
+      console.log('No clients connected and recording disabled, skipping reconnection attempt');
       sourceWs = null;
       isConnected = false;
     }
   });
 }
 
-// Function to disconnect from source if no clients
+// Function to disconnect from source if no clients and recording disabled
 function checkAndManageSourceConnection() {
-  if (connectedClients.size === 0) {
-    console.log('All clients disconnected, closing source WebSocket to reduce traffic');
+  if (connectedClients.size === 0 && !config.isRecordingEnabled) {
+    console.log('All clients disconnected and recording disabled, closing source WebSocket');
     if (sourceWs) {
       sourceWs.close();
       sourceWs = null;
@@ -269,8 +433,8 @@ function checkAndManageSourceConnection() {
     lastFrame = null;
     lastFrameTime = 0;
     frameDropCount = 0;
-  } else if (!sourceWs && connectedClients.size > 0) {
-    console.log('Clients connected but no source connection, establishing connection');
+  } else if (!sourceWs && (connectedClients.size > 0 || config.isRecordingEnabled)) {
+    console.log('Clients connected or recording enabled, establishing connection');
     connectToSource();
   }
 }
@@ -289,9 +453,9 @@ wss.on('connection', (ws) => {
     connected: isConnected
   }));
 
-  // Connect to source if this is the first client
-  if (isFirstClient) {
-    console.log('First client connected, establishing source connection');
+  // Connect to source if this is the first client or recording is enabled
+  if (isFirstClient || config.isRecordingEnabled) {
+    console.log('First client connected or recording enabled, establishing source connection');
     connectToSource();
   } else if (lastFrame && isConnected) {
     try {
@@ -312,7 +476,6 @@ wss.on('connection', (ws) => {
 
   ws.on('error', (error) => {
     console.error(`Client WebSocket error from IP ${clientIP}:`, error);
-    // Also check connection status on error
     checkAndManageSourceConnection();
   });
 });
@@ -321,10 +484,12 @@ wss.on('connection', (ws) => {
 server.listen(port, () => {
   console.log(`Server listening at http://${hostIP}:${port}`);
   console.log(`WebSocket server running at ws://${hostIP}:${port}/ws`);
-  console.log(`Relaying stream from: ${sourceWebSocket}`);
+  console.log(`Relaying stream from: ${config.sourceWebSocket}`);
+  console.log(`Recordings directory: ${RECORDINGS_DIR}`);
+  console.log(`Maximum recordings: ${config.maxRecordings}`);
   
-  // Only connect to source if we have clients (which we don't at startup)
-  console.log('Waiting for clients to connect before establishing source connection');
+  // Only connect to source if we have clients or recording is enabled
+  console.log('Waiting for clients to connect or recording to be enabled');
   
   // Ensure we're disconnected from source at startup
   checkAndManageSourceConnection();
