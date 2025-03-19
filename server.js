@@ -42,14 +42,39 @@ app.post('/api/config', (req, res) => {
   // Update the source WebSocket URL
   sourceWebSocket = newSourceWebSocket;
   
-  // Clear the last frame buffer
+  // Clear all buffers and reset state
   lastFrame = null;
+  lastFrameTime = 0;
+  frameDropCount = 0;
+  isConnected = false;
   
-  // Reconnect to the new source
+  // Clear any pending reconnect timer
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  
+  // Close existing source connection
   if (sourceWs) {
     sourceWs.close();
+    sourceWs = null;
   }
-  connectToSource();
+  
+  // Notify all clients about the source change
+  connectedClients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'status',
+        connected: false,
+        sourceChanged: true
+      }));
+    }
+  });
+
+  // Reconnect to the new source if we have clients
+  if (connectedClients.size > 0) {
+    connectToSource();
+  }
 
   res.json({ message: 'Configuration updated successfully' });
 });

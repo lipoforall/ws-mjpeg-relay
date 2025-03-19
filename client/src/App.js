@@ -61,6 +61,24 @@ function App() {
         if (jsonData.type === 'status') {
           console.log('Received status update:', jsonData.connected);
           setStatus(jsonData.connected ? 'connected' : 'disconnected');
+          
+          // Handle source change
+          if (jsonData.sourceChanged) {
+            console.log('Source changed, reconnecting...');
+            // Clear canvas
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            // Reset state
+            setResolution('--');
+            setFramesReceived(0);
+            connectionTimeRef.current = null;
+            setConnectedSince('--');
+            // Reconnect after a short delay
+            setTimeout(connectWebSocket, 1000);
+          }
           return;
         }
       } catch (e) {
@@ -150,8 +168,8 @@ function App() {
     // Fetch updated source info
     fetchSourceInfo();
     
-    // Reconnect WebSocket
-    connectWebSocket();
+    // Reconnect WebSocket after a short delay
+    setTimeout(connectWebSocket, 1000);
   };
 
   return (
