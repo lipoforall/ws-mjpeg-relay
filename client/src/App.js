@@ -9,6 +9,9 @@ function App() {
   const [resolution, setResolution] = useState('--');
   const [connectedSince, setConnectedSince] = useState('--');
   const [framesReceived, setFramesReceived] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
   const connectionTimeRef = useRef(null);
 
   const updateConnectionTime = () => {
@@ -110,6 +113,35 @@ function App() {
     };
   };
 
+  const updateSourceUrl = async () => {
+    if (!newSourceUrl) return;
+    
+    setIsUpdating(true);
+    try {
+      const response = await fetch('/api/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sourceWebSocket: newSourceUrl }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update source URL');
+      }
+      
+      setSourceInfo(newSourceUrl);
+      setShowSettings(false);
+      // Reconnect WebSocket to apply new source
+      connectWebSocket();
+    } catch (error) {
+      console.error('Error updating source URL:', error);
+      alert('Failed to update source URL. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   useEffect(() => {
     fetchSourceInfo();
     connectWebSocket();
@@ -128,7 +160,40 @@ function App() {
     <div className="container">
       <div className="header">
         <h1>WebSocket Video Stream Viewer</h1>
+        <button 
+          className="settings-button"
+          onClick={() => setShowSettings(!showSettings)}
+          title="Settings"
+        >
+          <i className="fas fa-cog"></i>
+        </button>
       </div>
+      
+      {showSettings && (
+        <div className="settings-panel">
+          <h3>Stream Settings</h3>
+          <div className="settings-form">
+            <div className="form-group">
+              <label htmlFor="sourceUrl">Source WebSocket URL:</label>
+              <input
+                type="text"
+                id="sourceUrl"
+                value={newSourceUrl}
+                onChange={(e) => setNewSourceUrl(e.target.value)}
+                placeholder="ws://example.com:port/ws"
+                className="input-field"
+              />
+            </div>
+            <button 
+              className="button"
+              onClick={updateSourceUrl}
+              disabled={isUpdating || !newSourceUrl}
+            >
+              {isUpdating ? 'Updating...' : 'Update Source'}
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="video-container">
         <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', margin: '0 auto' }} />
