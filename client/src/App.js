@@ -60,8 +60,17 @@ function App() {
       try {
         const jsonData = JSON.parse(event.data);
         if (jsonData.type === 'status') {
-          console.log('Received status update:', jsonData.connected);
-          setStatus(jsonData.connected ? 'connected' : 'disconnected');
+          console.log('Received status update:', jsonData);
+          setStatus(jsonData.connected ? 'connected' : 'connecting');
+          
+          // Handle source change notification
+          if (jsonData.sourceChanged) {
+            console.log('Source WebSocket URL changed');
+            setStatus('connecting');
+            setFramesReceived(0);
+            connectionTimeRef.current = null;
+            setConnectedSince('--');
+          }
           return;
         }
       } catch (e) {
@@ -132,6 +141,19 @@ function App() {
       
       setSourceInfo(newSourceUrl);
       setShowSettings(false);
+      
+      // Close existing WebSocket connection
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      
+      // Reset state
+      setStatus('connecting');
+      setFramesReceived(0);
+      connectionTimeRef.current = null;
+      setConnectedSince('--');
+      
       // Reconnect WebSocket to apply new source
       connectWebSocket();
     } catch (error) {
